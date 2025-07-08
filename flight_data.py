@@ -3,7 +3,7 @@ import pandas as pd
 from datetime import datetime, timedelta
 import os
 
-def get_arrivals_two_calls_per_airport(icao, api_key):
+def get_arrivals_two_calls_per_airport(icao: str, api_key: str) -> list[dict]:
     """
     Fetches arrivals for a given airport (ICAO code) in two 12-hour time windows for tomorrow.
     Returns a list of dictionaries with flight details.
@@ -15,9 +15,10 @@ def get_arrivals_two_calls_per_airport(icao, api_key):
     }
 
     target_day = datetime.utcnow().date() + timedelta(days=1)
+    # ISO 8601 format with seconds and 'Z' to indicate UTC time
     time_ranges = [
-        (f"{target_day}T00:00", f"{target_day}T12:00"),
-        (f"{target_day}T12:00", f"{target_day}T23:59")
+        (f"{target_day}T00:00:00Z", f"{target_day}T12:00:00Z"),
+        (f"{target_day}T12:00:00Z", f"{target_day}T23:59:59Z")
     ]
 
     querystring = {
@@ -72,7 +73,7 @@ if __name__ == "__main__":
     from dotenv import load_dotenv
     load_dotenv()  # Load from .env if available
 
-    api_key = os.getenv("687292277emsh6620811a3972b04p1a4ee9jsn8c02f9bc139b")  # Set this in your .env or GitHub Secrets
+    api_key = os.getenv("AERODATABOX_API_KEY")  # Environment variable name (fix!)
     if not api_key:
         raise ValueError("❌ Please set your API key in an environment variable: AERODATABOX_API_KEY")
 
