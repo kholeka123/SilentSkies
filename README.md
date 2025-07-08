@@ -1,63 +1,50 @@
 # Silent Skies: Noise Data for Smarter Airports
-![Dashboard Preview](screenshot.png)
-![Built with Streamlit](https://img.shields.io/badge/Built%20with-Streamlit-ff4b4b?logo=streamlit&logoColor=white)
-## 🚀 Live Demo
 
-Check out the live demo: [Silent Skies Dashboard](https://your-app-link.streamlit.app)
+![Python](https://img.shields.io/badge/python-3.10-blue)
+![Streamlit](https://img.shields.io/badge/streamlit-%3E%3D1.22-brightgreen)
 
-🚧 **Work in Progress**  
-Final demo scheduled for **July 17, 2025**.
+## 🚀 Live Demo  
+Try it online: [Silent Skies Dashboard](#) *(link coming soon)*
 
----
+## ✈️ Overview  
+Silent Skies is a fast-to-deploy interactive dashboard that visualizes aircraft noise, flight arrivals, and live weather to support smarter airport and environmental decisions.
 
-## ✈️ Overview
-**Silent Skies** is a fast-to-deploy, interactive dashboard that visualizes aircraft noise events, flight arrivals, and real-time weather conditions. Designed for aviation analysts, airport authorities, and environmental teams to make smarter, data-driven decisions.
+## 💡 Features  
+- 📍 Interactive map with flights and noise overlays  
+- 🕒 Timestamp matching of flights and noise events  
+- 🌦️ Real-time weather API integration  
+- 📊 Visual charts for arrivals and noise levels  
 
----
+## 🔧 Tech Stack  
+Python, Streamlit, Pandas, Matplotlib, PyDeck  
+AeroDataBox and OpenWeatherMap APIs  
 
-## 💡 Features
-- 📍 Interactive map with flight + noise overlays  
-- 🕒 Timestamp matching between aircraft and noise data  
-- 🌦️ Live weather API integration  
-- 📊 Visual charts of arrivals and noise levels
-
----
-
-## 🔧 Tech Stack
-- **Python**, **Streamlit**
-- **Pandas**, **Matplotlib**, **PyDeck**
-- **AeroDataBox** + **OpenWeatherMap** APIs
-
----
-
-## 🚀 Getting Started
-
+## 🚀 Getting Started  
 ```bash
-# Install dependencies
 pip install -r requirements.txt
-
-# Run the dashboard
 streamlit run app.py
 
-
-📦 silent-skies-dashboard/
+silent-skies-dashboard/
 ├── app.py
-├── flight_data.py
+├── data_fetch.py
+├── visualizations.py
 ├── cs2_environmental_impacts.csv
 ├── cs2_projects_summary.csv
 └── requirements.txt
 
+Usage
+Upload your noise CSV and API keys, select airports, and explore noise vs flights with live weather overlays.
 
 Why This Matters
-Aircraft noise is a growing concern for airports and surrounding communities. By merging flight, weather, and noise data into a single tool, Silent Skies helps identify hotspots and improve operational decisions.
-
+Aircraft noise impacts communities and operations. Silent Skies helps airports understand noise sources and optimize flight activity for quieter skies.
 
 Author
 Kholeka Westerkamp
 Data Analytics Student @ WBS Coding School
-LinkedIn | GitHub: kholeka123
+LinkedIn | GitHub
 
-## 📄 License
-To be added.
+License
+MIT License (to be added)
+
 
 
