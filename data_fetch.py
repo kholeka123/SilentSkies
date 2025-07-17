@@ -1,52 +1,52 @@
-# data_fetch.py
-
 import pandas as pd
 import requests
-from datetime import datetime, timedelta
-
 
 def load_noise_data(uploaded_file):
+    """Load noise data from CSV or XLSX and parse 'timestamp' column if present."""
     try:
-        if uploaded_file.name.endswith(".csv"):
-            df = pd.read_csv(uploaded_file)
-        elif uploaded_file.name.endswith(".xlsx"):
-            df = pd.read_excel(uploaded_file)
-        else:
-            raise ValueError("Unsupported file type")
+        if isinstance(uploaded_file, str):  # local path (for testing)
+            if uploaded_file.endswith(".csv"):
+                df = pd.read_csv(uploaded_file)
+            elif uploaded_file.endswith(".xlsx"):
+                df = pd.read_excel(uploaded_file)
+            else:
+                raise ValueError("Unsupported file type")
+        else:  # Streamlit uploaded file-like object
+            if uploaded_file.name.endswith(".csv"):
+                df = pd.read_csv(uploaded_file)
+            elif uploaded_file.name.endswith(".xlsx"):
+                df = pd.read_excel(uploaded_file)
+            else:
+                raise ValueError("Unsupported file type")
 
-        # Clean timestamp
         if "timestamp" in df.columns:
-            df["timestamp"] = pd.to_datetime(df["timestamp"])
+            df["timestamp"] = pd.to_datetime(df["timestamp"], errors="coerce")
         return df
+
     except Exception as e:
         raise RuntimeError(f"Failed to load file: {e}")
 
-
-def fetch_flight_data(icao, api_key):
+def get_weather(lat, lon, api_key):
+    """Fetch current weather from OpenWeatherMap API."""
     try:
-        url = f"https://aerodatabox.p.rapidapi.com/flights/airports/icao/{icao}/{datetime.utcnow().isoformat()}Z/{(datetime.utcnow() + timedelta(hours=3)).isoformat()}Z"
-
-        headers = {
-            "X-RapidAPI-Key": api_key,
-            "X-RapidAPI-Host": "aerodatabox.p.rapidapi.com"
-        }
-
-        params = {"withLeg": "true"}
-
-        response = requests.get(url, headers=headers, params=params)
+        url = (
+            f"https://api.openweathermap.org/data/2.5/weather?"
+            f"lat={lat}&lon={lon}&appid={api_key}&units=metric"
+        )
+        response = requests.get(url, timeout=10)
         response.raise_for_status()
+        data = response.json()
 
-        arrivals = response.json().get("arrivals", [])
-        df = pd.json_normalize(arrivals)
-
-        if not df.empty and "arrival.scheduledTimeUtc" in df.columns:
-            df["arrival_time"] = pd.to_datetime(df["arrival.scheduledTimeUtc"])
-        return df
+        return {
+            "Temperature (°C)": data["main"]["temp"],
+            "Wind Speed (m/s)": data["wind"]["speed"],
+            "Conditions": data["weather"][0]["description"].capitalize(),
+        }
     except Exception as e:
-        raise RuntimeError(f"Failed to fetch flight arrivals: {e}")
-
+        raise RuntimeError(f"Failed to fetch weather: {e}")
 
 def enrich_with_weather(df, lat, lon, api_key):
+    """Add weather details as columns to the DataFrame."""
     try:
         weather = get_weather(lat, lon, api_key)
         for key, value in weather.items():
@@ -55,26 +55,32 @@ def enrich_with_weather(df, lat, lon, api_key):
     except Exception as e:
         raise RuntimeError(f"Failed to enrich with weather: {e}")
 
-
-def get_weather(lat, lon, api_key):
+def merge_by_time(
+    df_noise,
+    df_flights,
+    time_col_noise="timestamp",
+    time_col_flight="arrival_scheduled_utc",
+    tolerance="5min",
+):
+    """Merge noise and flight data on nearest timestamps within a time tolerance."""
     try:
-        url = f"https://api.openweathermap.org/data/2.5/weather?lat={lat}&lon={lon}&appid={api_key}&units=metric"
-        response = requests.get(url)
-        response.raise_for_status()
+        if time_col_noise not in df_noise.columns:
+            raise ValueError(f"Missing column '{time_col_noise}' in noise data.")
+        if time_col_flight not in df_flights.columns:
+            raise ValueError(f"Missing column '{time_col_flight}' in flight data.")
 
-        data = response.json()
-        weather = {
-            "Temperature (°C)": data["main"]["temp"],
-            "Wind Speed (m/s)": data["wind"]["speed"],
-            "Conditions": data["weather"][0]["description"].capitalize()
-        }
-        return weather
-    except Exception as e:
-        raise RuntimeError(f"Failed to fetch weather: {e}")
+        # Ensure consistent timezone awareness for merging
+        if pd.api.types.is_datetime64tz_dtype(df_noise[time_col_noise]):
+            # noise is timezone-aware
+            if not pd.api.types.is_datetime64tz_dtype(df_flights[time_col_flight]):
+                # flights is naive — convert flights to UTC aware
+                df_flights[time_col_flight] = df_flights[time_col_flight].dt.tz_localize("UTC")
+        else:
+            # noise is naive
+            if pd.api.types.is_datetime64tz_dtype(df_flights[time_col_flight]):
+                # flights is aware — convert flights to naive (UTC)
+                df_flights[time_col_flight] = df_flights[time_col_flight].dt.tz_convert(None)
 
-
-def merge_by_time(df_noise, df_flights, time_col_noise="timestamp", time_col_flight="arrival_time", tolerance="5min"):
-    try:
         df_noise_sorted = df_noise.sort_values(by=time_col_noise).copy()
         df_flights_sorted = df_flights.sort_values(by=time_col_flight).copy()
 
@@ -84,9 +90,16 @@ def merge_by_time(df_noise, df_flights, time_col_noise="timestamp", time_col_fli
             left_on=time_col_noise,
             right_on=time_col_flight,
             direction="nearest",
-            tolerance=pd.Timedelta(tolerance)
+            tolerance=pd.Timedelta(tolerance),
         )
         return df_merged
     except Exception as e:
         raise RuntimeError(f"Failed to merge data: {e}")
+
+
+
+
+
+
+
 

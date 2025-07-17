@@ -1,126 +1,205 @@
+# visualizations.py — Silent Skies Dashboard Visualizations
+
 import streamlit as st
-import matplotlib.pyplot as plt
-import seaborn as sns
 import pydeck as pdk
 import pandas as pd
+import matplotlib.pyplot as plt
+import seaborn as sns
 
-AIRPORTS = {
-    "EDDB": {"lat": 52.3667, "lon": 13.5033, "city": "Berlin", "pop_m": 3.7},
-    "LFPG": {"lat": 49.0097, "lon": 2.5479, "city": "Paris", "pop_m": 11.0},
-    "EGLL": {"lat": 51.4700, "lon": -0.4543, "city": "London", "pop_m": 9.0},
-}
+sns.set_theme(style="whitegrid")
 
-def plot_noise_vs_time(df):
-    """Plot noise level over time as a line with shaded fill."""
-    st.write("### 📈 Noise Levels Over Time")
-    if 'timestamp' in df.columns and 'noise_db' in df.columns:
-        df_sorted = df.sort_values('timestamp')
-        plt.figure(figsize=(14, 5))
-        sns.lineplot(data=df_sorted, x='timestamp', y='noise_db', linewidth=2, color='royalblue')
-        plt.fill_between(df_sorted['timestamp'], df_sorted['noise_db'], color='lightblue', alpha=0.3)
-        plt.xlabel("Timestamp")
-        plt.ylabel("Noise Level (dB)")
-        plt.xticks(rotation=45, ha='right')
-        plt.title("Noise Level Over Time")
-        plt.tight_layout()
-        st.pyplot(plt.gcf())
-        plt.clf()
-        plt.close()
+def plot_map(df_arrivals: pd.DataFrame, icao_list: list, airports_info: dict) -> None:
+    """
+    Render a PyDeck map with arrival airport locations and flight points.
 
-def plot_noise_by_model(df):
-    """Boxplot of noise (max_slow) distribution grouped by aircraft model."""
-    if 'model' in df.columns and 'max_slow' in df.columns:
-        st.write("### ✈️ Noise Level Distribution by Aircraft Model")
-        plt.figure(figsize=(12, 5))
-        sns.boxplot(data=df.dropna(subset=['model', 'max_slow']), x='model', y='max_slow', palette="Set3")
-        plt.xticks(rotation=45, ha='right')
-        plt.tight_layout()
-        st.pyplot(plt.gcf())
-        plt.clf()
-        plt.close()
+    Args:
+        df_arrivals (pd.DataFrame): DataFrame containing arrival flights info.
+        icao_list (list): List of ICAO airport codes selected.
+        airports_info (dict): Dict with airport lat/lon/city info.
+    """
+    if df_arrivals.empty:
+        st.warning("No arrivals data to plot on map.")
+        return
 
-def plot_dual_noise_vs_arrivals(df_noise, df_arrivals):
-    """Dual axis plot of hourly average noise levels and number of flight arrivals."""
-    st.write("### 🔁 Noise Levels vs. Flight Arrivals per Hour")
-    noise_hourly = df_noise.copy()
-    noise_hourly['hour'] = noise_hourly['timestamp'].dt.floor('H')
-    noise_hourly = noise_hourly.groupby('hour')['noise_db'].mean().reset_index()
+    # Create scatter points for flights on map
+    flight_points = df_arrivals.dropna(subset=['arrival_latitude', 'arrival_longitude'])
+    flight_layer = pdk.Layer(
+        "ScatterplotLayer",
+        data=flight_points,
+        get_position='[arrival_longitude, arrival_latitude]',
+        get_color='[200, 30, 0, 160]',
+        get_radius=1000,
+        pickable=True,
+        auto_highlight=True,
+    )
 
-    arrivals_hourly = df_arrivals.copy()
-    arrivals_hourly['arrival_hour'] = arrivals_hourly['arrival_scheduled_utc'].dt.floor('H')
-    arrivals_count = arrivals_hourly.groupby('arrival_hour').size().reset_index(name='arrivals')
+    # Mark selected airports with bigger blue circles
+    airport_points = [
+        {"name": f"{code} - {airports_info[code]['city']}", 
+         "coordinates": [airports_info[code]['lon'], airports_info[code]['lat']]} 
+        for code in icao_list if code in airports_info
+    ]
+    airport_layer = pdk.Layer(
+        "ScatterplotLayer",
+        data=airport_points,
+        get_position='coordinates',
+        get_color='[0, 0, 255, 200]',
+        get_radius=2000,
+        pickable=True,
+        auto_highlight=True,
+    )
 
-    merged = pd.merge(noise_hourly, arrivals_count, left_on='hour', right_on='arrival_hour', how='outer').fillna(0)
-    merged['hour'] = merged['hour'].fillna(merged['arrival_hour'])
-    merged['hour_str'] = merged['hour'].dt.strftime('%H:%M')
-    merged = merged.sort_values('hour')
+    # Center the map roughly around the first selected airport or fallback
+    if airport_points:
+        initial_view = pdk.ViewState(
+            latitude=airport_points[0]['coordinates'][1],
+            longitude=airport_points[0]['coordinates'][0],
+            zoom=7,
+            pitch=0,
+        )
+    else:
+        initial_view = pdk.ViewState(latitude=52, longitude=13, zoom=4, pitch=0)
 
-    fig, ax1 = plt.subplots(figsize=(14, 5))
-    sns.lineplot(data=merged, x='hour_str', y='noise_db', marker="o", color='royalblue', ax=ax1)
-    ax1.set_ylabel('Avg Noise dB', color='royalblue')
-    ax1.tick_params(axis='y', labelcolor='royalblue')
-    ax1.set_xlabel('Hour')
-    plt.xticks(rotation=45, ha='right')
+    deck = pdk.Deck(
+        layers=[flight_layer, airport_layer],
+        initial_view_state=initial_view,
+        tooltip={"text": "{name}"}
+    )
 
-    ax2 = ax1.twinx()
-    sns.barplot(data=merged, x='hour_str', y='arrivals', alpha=0.4, color='orange', ax=ax2)
-    ax2.set_ylabel('Number of Arrivals', color='orange')
-    ax2.tick_params(axis='y', labelcolor='orange')
+    st.subheader("🗺️ Flight Arrivals Map")
+    st.pydeck_chart(deck)
 
-    plt.title("Noise Levels & Flight Arrivals Over the Day")
+def plot_noise_subplots(df_noise: pd.DataFrame, icao_list: list) -> None:
+    """
+    Plot noise measurements time series subplots, one subplot per selected airport ICAO.
+
+    Args:
+        df_noise (pd.DataFrame): Noise data with 'timestamp', 'noise_db', and 'icao' columns.
+        icao_list (list): List of selected ICAO airport codes.
+    """
+    if df_noise.empty:
+        st.warning("No noise data to plot.")
+        return
+
+    filtered = df_noise[df_noise['icao'].isin(icao_list)]
+    if filtered.empty:
+        st.warning("No noise data for selected airports.")
+        return
+
+    st.subheader("🔊 Noise Level Over Time by Airport")
+    n_airports = len(icao_list)
+    fig, axes = plt.subplots(n_airports, 1, figsize=(12, 3 * n_airports), sharex=True)
+    if n_airports == 1:
+        axes = [axes]
+
+    for ax, icao in zip(axes, icao_list):
+        data = filtered[filtered['icao'] == icao]
+        if data.empty:
+            ax.text(0.5, 0.5, f"No data for {icao}", ha='center', va='center')
+            continue
+        sns.lineplot(data=data, x='timestamp', y='noise_db', ax=ax)
+        ax.set_title(f"Noise Levels at {icao}")
+        ax.set_ylabel("Noise (dB)")
+        ax.set_xlabel("")
+        ax.grid(True)
+
+    plt.xlabel("Time")
+    st.pyplot(fig)
+
+def plot_arrival_histograms(df_arrivals: pd.DataFrame) -> None:
+    """
+    Plot histogram of flight arrivals by hour of day aggregated across airports.
+
+    Args:
+        df_arrivals (pd.DataFrame): DataFrame with 'arrival_scheduled_utc' timestamps.
+    """
+    if df_arrivals.empty:
+        st.warning("No arrivals data to plot histogram.")
+        return
+
+    st.subheader("✈️ Flight Arrivals by Hour of Day")
+
+    df_arrivals['hour'] = df_arrivals['arrival_scheduled_utc'].dt.hour
+    plt.figure(figsize=(10, 4))
+    sns.histplot(df_arrivals['hour'], bins=24, kde=False, color='navy')
+    plt.xlabel("Hour of Day (UTC)")
+    plt.ylabel("Number of Arrivals")
+    plt.xticks(range(0, 24))
+    plt.grid(True, axis='y')
+    st.pyplot(plt.gcf())
+
+def plot_combined_hourly(df_noise: pd.DataFrame, df_arrivals: pd.DataFrame, icao_list: list) -> None:
+    """
+    Plot combined hourly average noise and number of arrivals by airport.
+
+    Args:
+        df_noise (pd.DataFrame): Noise data with 'timestamp', 'noise_db', 'icao'.
+        df_arrivals (pd.DataFrame): Arrival data with 'arrival_scheduled_utc', 'icao'.
+        icao_list (list): List of selected airports.
+    """
+    if df_noise.empty or df_arrivals.empty:
+        st.warning("Insufficient data for combined hourly plot.")
+        return
+
+    st.subheader("📊 Hourly Average Noise & Flight Arrivals")
+
+    # Prepare noise hourly average
+    noise = df_noise[df_noise['icao'].isin(icao_list)].copy()
+    noise['hour'] = noise['timestamp'].dt.floor('H')
+    noise_avg = noise.groupby(['icao', 'hour'])['noise_db'].mean().reset_index()
+
+    # Prepare arrivals hourly count
+    arrivals = df_arrivals[df_arrivals['icao'].isin(icao_list)].copy()
+    arrivals['hour'] = arrivals['arrival_scheduled_utc'].dt.floor('H')
+    arrivals_count = arrivals.groupby(['icao', 'hour']).size().reset_index(name='arrivals_count')
+
+    # Merge on icao and hour
+    merged = pd.merge(noise_avg, arrivals_count, on=['icao', 'hour'], how='outer').fillna(0)
+
+    # Plot per airport
+    n_airports = len(icao_list)
+    fig, axes = plt.subplots(n_airports, 1, figsize=(14, 4 * n_airports), sharex=True)
+
+    if n_airports == 1:
+        axes = [axes]
+
+    for ax, icao in zip(axes, icao_list):
+        data = merged[merged['icao'] == icao].sort_values('hour')
+        if data.empty:
+            ax.text(0.5, 0.5, f"No data for {icao}", ha='center', va='center')
+            continue
+        ax2 = ax.twinx()
+        ax.plot(data['hour'], data['noise_db'], 'b-', label='Avg Noise (dB)')
+        ax2.bar(data['hour'], data['arrivals_count'], alpha=0.3, color='orange', label='Arrivals Count')
+
+        ax.set_ylabel("Avg Noise (dB)", color='b')
+        ax2.set_ylabel("Arrivals Count", color='orange')
+        ax.set_title(f"{icao} Hourly Noise & Arrivals")
+        ax.grid(True)
+        ax.legend(loc='upper left')
+        ax2.legend(loc='upper right')
+
+    plt.xlabel("Time (Hourly)")
     plt.tight_layout()
     st.pyplot(fig)
-    plt.clf()
-    plt.close()
 
-def plot_map(df_arrivals, icao_list):
-    """
-    Plot a heatmap of flight arrival locations if lat/lon available,
-    else fallback to airport scatter plot from AIRPORTS metadata.
-    """
-    if df_arrivals[['arrival_latitude', 'arrival_longitude']].notnull().all(axis=1).any():
-        df_map = df_arrivals.dropna(subset=['arrival_latitude', 'arrival_longitude']).copy()
 
-        def map_color(icao):
-            colors = {"EDDB": [255, 0, 0, 160], "LFPG": [0, 255, 0, 160], "EGLL": [0, 0, 255, 160]}
-            return colors.get(icao, [0, 100, 255, 160])
 
-        df_map['color'] = df_map['icao'].apply(map_color)
 
-        heat_layer = pdk.Layer(
-            "HeatmapLayer",
-            data=df_map,
-            get_position='[arrival_longitude, arrival_latitude]',
-            get_weight=1,
-            radiusPixels=60,
-        )
-        view_state = pdk.ViewState(
-            latitude=df_map['arrival_latitude'].mean(),
-            longitude=df_map['arrival_longitude'].mean(),
-            zoom=6
-        )
-        st.pydeck_chart(pdk.Deck(layers=[heat_layer], initial_view_state=view_state))
 
-    else:
-        fallback_df = pd.DataFrame([
-            {
-                "icao": code,
-                "arrival_latitude": AIRPORTS[code]['lat'],
-                "arrival_longitude": AIRPORTS[code]['lon']
-            } for code in icao_list if code in AIRPORTS
-        ])
-        st.warning("No coordinates found in flight data. Showing airport fallback locations.")
-        scatter_layer = pdk.Layer(
-            "ScatterplotLayer",
-            data=fallback_df,
-            get_position='[arrival_longitude, arrival_latitude]',
-            get_color='[255, 165, 0]',
-            get_radius=1000,
-        )
-        view_state = pdk.ViewState(
-            latitude=fallback_df['arrival_latitude'].mean(),
-            longitude=fallback_df['arrival_longitude'].mean(),
-            zoom=6
-        )
-        st.pydeck_chart(pdk.Deck(layers=[scatter_layer], initial_view_state=view_state))
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 

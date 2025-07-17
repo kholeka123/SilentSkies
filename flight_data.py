@@ -1,91 +1,131 @@
-import requests
-import pandas as pd
-from datetime import datetime, timedelta
+import streamlit as st
+from data_fetch import load_noise_data, enrich_with_weather, merge_by_time
+from flight_data import get_arrivals
 import os
+from dotenv import load_dotenv
+import matplotlib.pyplot as plt
+import seaborn as sns
+import pandas as pd
 
-def get_arrivals_two_calls_per_airport(icao: str, api_key: str) -> list[dict]:
-    """
-    Fetches arrivals for a given airport (ICAO code) in two 12-hour time windows for tomorrow.
-    Returns a list of dictionaries with flight details.
-    """
-    base_url = "https://aerodatabox.p.rapidapi.com/flights/airports/icao"
-    headers = {
-        "x-rapidapi-key": api_key,
-        "x-rapidapi-host": "aerodatabox.p.rapidapi.com"
-    }
+# Load API keys
+load_dotenv()
+OPENWEATHER_API_KEY = os.getenv("OPENWEATHER_API_KEY")
+AERODATABOX_API_KEY = os.getenv("AERODATABOX_API_KEY")
 
-    target_day = datetime.utcnow().date() + timedelta(days=1)
-    # ISO 8601 format with seconds and 'Z' to indicate UTC time
-    time_ranges = [
-        (f"{target_day}T00:00:00Z", f"{target_day}T12:00:00Z"),
-        (f"{target_day}T12:00:00Z", f"{target_day}T23:59:59Z")
-    ]
+# Streamlit UI
+st.title("Silent Skies: Aircraft Noise and Flight Arrivals Dashboard")
 
-    querystring = {
-        "withLeg": "true",
-        "direction": "Arrival",
-        "withCancelled": "false",
-        "withCodeshared": "false",
-        "withCargo": "false",
-        "withPrivate": "false",
-        "withLocation": "true"
-    }
+uploaded_file = st.file_uploader("Upload Noise Data CSV or XLSX", type=["csv", "xlsx"])
 
-    flight_list = []
+if uploaded_file is not None:
+    noise_df = None
+    try:
+        noise_df = load_noise_data(uploaded_file)
+        st.success(f"Loaded noise data with {len(noise_df)} records.")
+    except Exception as e:
+        st.error(f"Error loading noise data: {e}")
 
-    for start_time, end_time in time_ranges:
-        url = f"{base_url}/{icao}/{start_time}/{end_time}"
-        try:
-            response = requests.get(url, headers=headers, params=querystring, timeout=10)
-            response.raise_for_status()
-            arrivals = response.json().get("arrivals", [])
+    if noise_df is not None:
+        icao_code = st.text_input("Enter ICAO Airport Code (e.g., EDDB, EGLL, LFPG):").upper().strip()
+        lat = st.text_input("Airport Latitude (decimal degrees):")
+        lon = st.text_input("Airport Longitude (decimal degrees):")
 
-            for flight in arrivals:
-                flight_list.append({
-                    "flight_number": flight.get("number"),
-                    "flight_status": flight.get("status"),
-                    "origin_icao": flight.get("departure", {}).get("airport", {}).get("icao"),
-                    "origin_iata": flight.get("departure", {}).get("airport", {}).get("iata"),
-                    "origin_airport_name": flight.get("departure", {}).get("airport", {}).get("name"),
-                    "arrival_scheduled_utc": flight.get("arrival", {}).get("scheduledTime", {}).get("utc"),
-                    "arrival_scheduled_local": flight.get("arrival", {}).get("scheduledTime", {}).get("local"),
-                    "arrival_terminal": flight.get("arrival", {}).get("terminal"),
-                    "arrival_gate": flight.get("arrival", {}).get("gate"),
-                    "arrival_baggage_belt": flight.get("arrival", {}).get("baggageBelt"),
-                    "aircraft_model": flight.get("aircraft", {}).get("model"),
-                    "aircraft_registration": flight.get("aircraft", {}).get("reg"),
-                    "aircraft_modeS": flight.get("aircraft", {}).get("modeS"),
-                    "airline_name": flight.get("airline", {}).get("name"),
-                    "airline_iata": flight.get("airline", {}).get("iata"),
-                    "airline_icao": flight.get("airline", {}).get("icao"),
-                    "call_sign": flight.get("callSign"),
-                    "arrival_revised_utc": flight.get("arrival", {}).get("revisedTime", {}).get("utc"),
-                    "arrival_revised_local": flight.get("arrival", {}).get("revisedTime", {}).get("local"),
-                })
+        if icao_code and lat and lon:
+            try:
+                lat = float(lat.replace(',', '.'))
+                lon = float(lon.replace(',', '.'))
+            except ValueError:
+                st.error("Invalid latitude or longitude. Use decimal numbers (e.g., 52.362250).")
+                st.stop()
 
-        except requests.exceptions.RequestException as e:
-            print(f"[ERROR] Failed fetching {icao} arrivals from {start_time} to {end_time}:\n{e}")
+            try:
+                arrivals_df = get_arrivals(icao_code, AERODATABOX_API_KEY)
+                st.success(f"Fetched {len(arrivals_df)} upcoming arrival flights for {icao_code}.")
+            except Exception as e:
+                st.error(f"Error fetching arrivals: {e}")
+                arrivals_df = None
 
-    return flight_list
+            if OPENWEATHER_API_KEY:
+                try:
+                    noise_df = enrich_with_weather(noise_df, lat, lon, OPENWEATHER_API_KEY)
+                    st.success("Enriched noise data with current weather conditions.")
+                except Exception as e:
+                    st.error(f"Error fetching weather: {e}")
+            else:
+                st.warning("OpenWeather API key not found. Skipping weather enrichment.")
 
-# === Optional: Test when running directly ===
-if __name__ == "__main__":
-    from dotenv import load_dotenv
-    load_dotenv()  # Load from .env if available
+            if arrivals_df is not None:
+                try:
+                    merged_df = merge_by_time(noise_df, arrivals_df)
+                    st.success(f"Merged datasets with {len(merged_df.dropna())} matching records.")
+                    st.dataframe(merged_df)
 
-    api_key = os.getenv("AERODATABOX_API_KEY")  # Environment variable name (fix!)
-    if not api_key:
-        raise ValueError("❌ Please set your API key in an environment variable: AERODATABOX_API_KEY")
+                    # Rename and clean columns
+                    merged_df = merged_df.rename(columns={
+                        'noise_db': 'dB',
+                        'icao': 'airport'
+                    })
 
-    icaos = ['EDDB', 'LFPG', 'EGLL']  # Sample airports: Berlin, Paris CDG, Heathrow
-    all_flights = []
-    for icao in icaos:
-        flights = get_arrivals_two_calls_per_airport(icao, api_key)
-        all_flights.extend(flights)
+                    required_cols = {'timestamp', 'dB', 'airport'}
+                    if not required_cols.issubset(merged_df.columns):
+                        st.error(f"Missing required columns: {required_cols - set(merged_df.columns)}")
+                        st.stop()
 
-    df_flights = pd.DataFrame(all_flights)
-    df_flights_clean = df_flights.dropna(subset=["arrival_scheduled_utc", "arrival_scheduled_local"]).reset_index(drop=True)
+                    merged_df['timestamp'] = pd.to_datetime(merged_df['timestamp'], errors='coerce')
+                    merged_df.dropna(subset=['timestamp', 'dB', 'airport'], inplace=True)
 
-    print("✅ Sample cleaned flight data:")
-    print(df_flights_clean.head())
+                    merged_df['hour'] = merged_df['timestamp'].dt.hour
+                    avg_db_hourly = merged_df.groupby(['airport', 'hour'])['dB'].mean().reset_index()
+
+                    # Plotting
+                    fig, ax = plt.subplots(figsize=(14, 7))
+                    sns.set_style("whitegrid")
+
+                    # Histogram bars
+                    sns.barplot(
+                        data=avg_db_hourly,
+                        x='hour',
+                        y='dB',
+                        hue='airport',
+                        palette='Set2',
+                        ci=None,
+                        dodge=True,
+                        ax=ax
+                    )
+
+                    # Overlay trend lines
+                    for airport in avg_db_hourly['airport'].unique():
+                        airport_data = avg_db_hourly[avg_db_hourly['airport'] == airport]
+                        ax.plot(
+                            airport_data['hour'],
+                            airport_data['dB'],
+                            marker='o',
+                            linewidth=2,
+                            label=f"{airport} Trend"
+                        )
+
+                    ax.set_title("Average Noise Level (dB) per Hour with Overlaid Trends")
+                    ax.set_xlabel("Hour of Day")
+                    ax.set_ylabel("Average Noise Level (dB)")
+                    ax.set_xticks(range(0, 24))
+                    ax.legend(title="Airport", loc='upper right')
+                    fig.tight_layout()
+
+                    st.pyplot(fig)
+
+                except Exception as e:
+                    st.error(f"Failed to merge or visualize datasets: {e}")
+
+
+
+
+
+
+
+
+
+
+
+
+
 
