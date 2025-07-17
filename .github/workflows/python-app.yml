@@ -24,10 +24,15 @@ jobs:
         python -m pip install --upgrade pip
         if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
 
-            - name: Auto-format code with Black
+    - name: Auto-format code with Black
       run: |
         pip install black
         black .
+
+    - name: Run tests with pytest
+      run: |
+        pip install pytest
+        pytest tests/
 
     - name: Check for syntax errors
       run: |
