@@ -41,6 +41,7 @@ Python | Streamlit
 Silent Skies is a fast-to-deploy interactive dashboard that visualizes aircraft noise, flight arrivals, and live weather to support smarter airport and environmental decisions.
 
 💡 Features
+
 📍 Interactive map with flights and noise overlays
 
 🕒 Timestamp matching of flights and noise events
@@ -49,12 +50,14 @@ Silent Skies is a fast-to-deploy interactive dashboard that visualizes aircraft 
 
 📊 Visual charts for arrivals and noise levels
 
+
 🔧 Tech Stack
 Python, Streamlit, Pandas, Matplotlib, Seaborn, PyDeck
 
 AeroDataBox API for flight arrivals
 
 OpenWeatherMap API for real-time weather
+
 
 Project Structure
 arduino
@@ -69,6 +72,7 @@ silent-skies-dashboard/
 ├── requirements.txt
 └── .streamlit/
     └── config.toml
+    
 Usage
 Upload your noise CSV and API keys, select airports, and explore noise vs flights with live weather overlays.
 
@@ -77,6 +81,7 @@ Aircraft noise impacts communities and operations. Silent Skies helps airports u
 
 Author
 Kholeka Westerkamp
+
 Data Analyst
 🔗 LinkedIn | 💻 GitHub
 
