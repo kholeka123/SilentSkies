@@ -29,6 +29,7 @@
    git clone https://github.com/kholeka123/SilentSkies.git
    cd SilentSkies
    
+   
 
 Silent Skies: Noise Data for Smarter Airports ✈️🌍
 Python | Streamlit
@@ -79,7 +80,6 @@ Upload your noise CSV and API keys, select airports, and explore noise vs flight
 
 
 Why This Matters:
-
 Aircraft noise impacts communities and operations. Silent Skies helps airports understand noise sources and optimize flight activity for quieter skies.
 
 
