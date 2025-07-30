@@ -73,11 +73,15 @@ silent-skies-dashboard/
 └── .streamlit/
     └── config.toml
     
+    
 Usage
 Upload your noise CSV and API keys, select airports, and explore noise vs flights with live weather overlays.
 
-Why This Matters
+
+Why This Matters:
+
 Aircraft noise impacts communities and operations. Silent Skies helps airports understand noise sources and optimize flight activity for quieter skies.
+
 
 Author
 Kholeka Westerkamp
