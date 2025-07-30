@@ -11,6 +11,10 @@ import seaborn as sns
 import pydeck as pdk
 
 # === Set Mapbox Token for PyDeck ===
+
+from dotenv import load_dotenv
+load_dotenv()
+
 pdk.settings.mapbox_api_key = os.getenv("MAPBOX_API_KEY", "your_mapbox_token_here")
 
 # === Static fallback airport info ===
@@ -280,38 +284,6 @@ if weather_records:
     
     st.dataframe(df_weather[["City", "Weather"]])
     st.bar_chart(df_weather[["Temperature (°C)", "Wind (m/s)", "Humidity (%)"]])
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 
